@@ -1,0 +1,127 @@
+- name: using vars in file 
+  become: true 
+  hosts: all
+  vars: 
+    name: tomcat  
+    dir_name: /opt/tomcat
+    url: https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.43/bin/apache-tomcat-10.1.43.tar.gz
+  tasks: 
+    - name: Install OpenJDK 11
+      ansible.builtin.apt:
+        name: openjdk-11-jdk
+        state: present
+        update_cache: yes
+    - name: creating a group 
+      ansible.builtin.group:
+        name: "{{ name }}"       
+        state: present 
+    - name: adding user to group 
+      ansible.builtin.user: 
+        name: "{{ name }}"
+        shell: /bin/false 
+        group: "{{ name }}"
+        home: "{{ dir_name }}"
+        create_home: no 
+        state: present 
+    - name: changing directory
+      ansible.builtin.command: ls
+      args: 
+        chdir: /tmp      
+    - name: installing curl 
+      ansible.builtin.apt:  
+        name: curl 
+        state: present  
+    - name: Download Tomcat
+      ansible.builtin.get_url:
+        url: "{{ url }}"
+        dest: /tmp/apache-tomcat-10.1.43.tar.gz
+        mode: '0644'
+    - name: creating a directory 
+      ansible.builtin.file: 
+        path: "{{ dir_name }}" 
+        state: directory
+        owner: "{{ name }}"
+        group: "{{ name }}"
+        mode: '0755'
+    - name: un archive the url 
+      ansible.builtin.unarchive:
+        src: /tmp/apache-tomcat-10.1.43.tar.gz
+        mode: '0644'
+        dest: "{{ dir_name }}"
+        remote_src: yes 
+    - name: changing directory
+      ansible.builtin.command: ls
+      args: 
+        chdir: "{{ dir_name }}"
+    - name: Giving tomcat group ownership
+      ansible.builtin.file: 
+        path: "{{ dir_name }}"
+        owner: "{{ name }}" 
+        group: tomcat 
+        recurse: yes 
+    - name: Add group read permission recursively to conf directory
+      ansible.builtin.file:
+        path: "{{ dir_name }}/conf"
+        mode: "g+r"
+        recurse: yes
+    - name: Add group execute permission to conf directory only
+      ansible.builtin.file:
+        path: "{{ dir_name }}/conf"
+        mode: "2750"
+    - name: giving permissions for tomcat on directories 
+      ansible.builtin.file:
+        path: "{{ dir_name }}/{{ item }}"
+        owner: "{{ name }}"
+        recurse: yes 
+      loop: 
+        - webapps
+        - work
+        - temp
+        - logs
+
+    - name: Create tomcat systemd service file
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/tomcat.service
+        owner: "{{ name }}"
+        group: "{{ name }}"
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Apache Tomcat Web Application Container
+          After=network.target
+
+          [Service]
+          Type=forking
+
+          User=tomcat
+          Group=tomcat
+
+          Environment="JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64"
+          Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
+          Environment="CATALINA_HOME=/opt/tomcat"
+          Environment="CATALINA_BASE=/opt/tomcat"
+          Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
+          Environment="JAVA_OPTS=-Djava.security.egd=file:/dev/./urandom"
+
+          ExecStart=/opt/tomcat/bin/startup.sh
+          ExecStop=/opt/tomcat/bin/shutdown.sh
+
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Tomcat service
+      ansible.builtin.systemd:
+        name: "{{ name }}"
+        enabled: yes
+        state: started
+          
+      
+          
+     
+    
